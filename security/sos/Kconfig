@@ -1,0 +1,5 @@
+config SECURITY_SOS
+    bool "Support SOS"
+    default y
+    help
+        This module for Security OS that support MAC, RBAC concept.
