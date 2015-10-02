@@ -8,6 +8,7 @@
 #include <linux/fs.h>
 #include <linux/mutex.h>
 #include <linux/string.h>
+#include <linux/list.h>
 
 /*
  * Declare
@@ -23,12 +24,13 @@ char *sos_log_buf = NULL;
 int sos_log_size;
 unsigned char sos_wait_log_cond = false;
 
+int sos_lsm_prepare_creds(struct cred* cred, const struct cred *old, gfp_t gfp);
 int sos_lsm_inode_permission(struct inode *inode, int mask);
 void sos_log(char *fmt, ...);
 
 static struct security_operations sos_lsm_ops = {
     .name = "Sos",
-
+    .cred_prepare = sos_lsm_prepare_creds, // cred created
     .inode_permission = sos_lsm_inode_permission  // check permission that it can access or not
 };
 
@@ -38,6 +40,7 @@ static struct security_operations sos_lsm_ops = {
  */
 
 struct ls_role *role;
+struct ls_user tmp_user;
 
 static __init int sos_lsm_init(void) {
 
@@ -52,15 +55,20 @@ static __init int sos_lsm_init(void) {
     // init roles list..
     roles_init();
 
+    // create default role in list, default role allow all
+    create_role("default");
+
     role = create_role("Test");
     ls_create_file_role(role, 15466509, 0);
+    tmp_user.uid = 1000;
+
+    list_add(&tmp_user.list, &role->bind_users);
 
     sos_log("SOS: init_roles\n");
 
-    if(register_security(&sos_lsm_ops)) {
+    if(register_security(&sos_lsm_ops))
         // make panic when failed to register security module.
-        panic("Can not register module");
-    }
+        panic("Can not register module\n");
 
     sos_log("SOS: register security\n");
 
@@ -71,22 +79,24 @@ int
 sos_lsm_inode_permission
 (struct inode *inode, int mask) {
 
-    uid_t current_uid = current_uid().val;
-    int retval;
-
     unsigned long i_ino = inode->i_ino;
-    if(current_uid != 1000)
-        return 0;
+    unsigned int retval = 0;
 
-    // struct ls_role *role = ls_get_role_by_uid(current_uid);
+    struct ls_role *role = ls_get_role();
 
     retval = ls_is_role_allowed_inode(role, i_ino, mask);
 
-    if(unlikely(retval != 0)) {
-        sos_log("uid %d invalid access to %d\n", current_uid, i_ino);
-    }
+    if(unlikely(retval != 0))
+        sos_log("invalid access to %d\n", i_ino);
 
     return retval;
+}
+
+int sos_lsm_prepare_creds(struct cred *cred, const struct cred *old, gfp_t gfp) {
+
+//    cred->security = ls_get_role();
+
+    return 0;
 }
 
 void sos_log(char *msg, ...) {

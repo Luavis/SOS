@@ -7,6 +7,7 @@
 #include <linux/list.h>
 #include <linux/uidgid.h>
 #include <linux/types.h>
+#include <linux/pid.h>
 
 #define LS_READ_ACCS 1
 #define LS_WRITE_ACCS 2
@@ -55,7 +56,16 @@ struct ls_role {
     struct list_head list;
 };
 
+struct ls_session_role {
+
+    pid_t sid;
+    struct ls_role *role;
+
+    struct list_head list;
+};
+
 extern struct list_head ls_roles;
+extern struct list_head ls_session_roles;
 
 void roles_init(void);
 struct ls_role *create_role(char *name);
@@ -74,6 +84,12 @@ ls_is_role_allowed_inode
 
 struct ls_role *
 ls_get_role_by_uid(uid_t uid);
+
+struct ls_role *
+ls_get_role_by_sid(pid_t sid);
+
+struct ls_role *
+ls_get_role(void);
 
 #endif /* _RBAC_ROLE_H */
 
