@@ -11,37 +11,61 @@
 
 #define LS_ALLOW 0
 #define LS_DENY -EACCES
+#define LS_IS_ALLOWED(X) (X == LS_ALLOW)
+#define LS_STATE_STRING(X) (LS_IS_ALLOWED(X) ? "ALLOW" : "DENY")
 
 #define LS_HEADER_SIZE 600
 #define LS_ATTRIBUTE_SIZE 10
 
 extern unsigned int default_policy;
 
-
+// --- OBJECT STRUCTURE --- //
 struct ls_file_role {
     unsigned long i_ino;
     unsigned char u_acc;
+
     struct list_head list;
 };
 
 struct ls_network_role {
     unsigned char *ip;
     unsigned short port;
-    unsigned short is_allow;
+
+    unsigned char is_allow_open;
+
     struct list_head list;
+};
+
+enum ls_process_id_type {
+    ls_process_pid = 0,
+    ls_process_inode
 };
 
 struct ls_process_role {
-    unsigned int pid;
-    unsigned short is_allow_kill;
+    unsigned long id_value;
+    enum ls_process_id_type id_type;
+
+    unsigned char is_allow_kill;
+    unsigned char is_allow_trace;
+
     struct list_head list;
 };
 
-struct ls_user {
+// --- SUBJECT STRUCTURE --- //
+struct ls_bind_process {
+    unsigned long id_value;
+    enum ls_process_id_type id_type;
+
+    struct list_head list;
+};
+
+struct ls_bind_user {
     uid_t uid;
+
     struct list_head list;
 };
 
+// --- ROLE --- //
 struct ls_role {
     char *role_name;
 	char *parent_role_name;
@@ -50,6 +74,8 @@ struct ls_role {
     struct list_head file_roles;
     struct list_head network_roles;
     struct list_head process_roles;
+
+    struct list_head bind_processes;
     struct list_head bind_users;
 
 	struct list_head child_roles;
@@ -61,29 +87,57 @@ struct ls_role {
 
 extern struct list_head ls_roles;
 
+// init and parse functions for roles
 void roles_init(void);
-//struct ls_role *create_role(char *name);
-//
-//
-//////////////// About File ////////////////
-//
-//struct ls_file_role *
-//ls_create_file_role
-//(struct ls_role *role, unsigned long i_ino, unsigned char u_acc);
-//
-//struct ls_network_role *
-//ls_create_network_role
-//(struct ls_role *role, unsigned char *ip, unsigned short port, unsigned short is_allow);
-//
-//struct ls_process_role *
-//ls_create_process_role
-//(struct ls_role *role, unsigned int pid, unsigned short is_allow_kill);
-//
-//struct ls_user *
-//ls_create_user
-//(struct ls_role *role, uid_t uid);
-//
-// Check user is allowed to access inode
+
+struct ls_role *
+ls_create_role
+(char *role_name, char *parent_role_name, int attr_count);
+
+struct ls_role *
+ls_create_rle_by_binary
+(char *header_data);
+
+struct ls_file_role *
+ls_create_file_role
+(struct ls_role *role, unsigned long i_ino, unsigned char u_acc);
+
+struct ls_file_role *
+ls_create_file_role_by_binary
+(struct ls_role *role, char *attr_data);
+
+struct ls_network_role *
+ls_create_network_role
+(struct ls_role *role, unsigned char *ip, unsigned short port, unsigned char is_allow_open);
+
+struct ls_network_role *
+ls_create_network_role_by_binary
+(struct ls_role *role, char *attr_data);
+
+struct ls_process_role *
+ls_create_process_role
+(struct ls_role *role, unsigned long id_value, unsigned int id_type, unsigned char is_allow_kill, unsigned char is_allow_trace);
+
+struct ls_process_role *
+ls_create_process_role_by_binary
+(struct ls_role *role, char *attr_data);
+
+struct ls_bind_process *
+ls_create_bind_process
+(struct ls_role *role, unsigned long id_value, unsigned int id_type);
+
+struct ls_bind_process *
+ls_create_bind_process_by_binary
+(struct ls_role *role, char *attr_data);
+
+struct ls_bind_user *
+ls_create_bind_user
+(struct ls_role *role, uid_t uid);
+
+struct ls_bind_user *
+ls_create_bind_user_by_binary
+(struct ls_role *role, char *attr_data);
+
 unsigned int
 ls_is_role_allowed_inode
 (struct ls_role *role, unsigned long i_ino, unsigned char mode);

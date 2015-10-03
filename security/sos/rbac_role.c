@@ -41,10 +41,13 @@ print_ls_roles
 (void) {
 	struct ls_role *role = NULL;
 	struct ls_role *child_role = NULL;
+
 	struct ls_file_role *file_role = NULL;
 	struct ls_network_role *network_role = NULL;
 	struct ls_process_role *process_role = NULL;
-	struct ls_user *bind_user = NULL;
+
+    struct ls_bind_process *bind_process = NULL;
+	struct ls_bind_user *bind_user = NULL;
 
 	list_for_each_entry(role, &ls_roles, list) {
 		printk("-------------------------------------------------\n");
@@ -58,35 +61,47 @@ print_ls_roles
 
 		printk("attr count : %d\n", role->attr_count);
 
-		printk("\t\t<file role>\n");
+        printk("\t<OBJECTS>\n");
+		printk("\t\t<file roles>\n");
 		list_for_each_entry(file_role, &role->file_roles, list) {
 			printk("\t\t - ");
-			printk("i_ino : %ld, ", file_role->i_ino);
+			printk("i_ino : %lu, ", file_role->i_ino);
 			printk("u_acc : \\x%02x\n", file_role->u_acc);
 		}
 
-		printk("\t\t<network role>\n");
+		printk("\t\t<network roles>\n");
 		list_for_each_entry(network_role, &role->network_roles, list) {
 			printk("\t\t - ");
-			//printk("ip : %s, ", network_role->ip);
-			printk("port : %d, ", network_role->port);
-			printk("is_allow : %d\n", network_role->is_allow);
+			printk("ip : %u.%u.%u.%u, ", network_role->ip[0], network_role->ip[1], network_role->ip[2], network_role->ip[3]);
+			printk("port : %u, ", network_role->port);
+			printk("is_allow_open : %s\n", LS_STATE_STRING(network_role->is_allow_open));
 		}
 
-		printk("\t\t<process role>\n");
+		printk("\t\t<process roles>\n");
 		list_for_each_entry(process_role, &role->process_roles, list) {
 			printk("\t\t - ");
-			printk("pid : %d, ", process_role->pid);
-			printk("is_allow_kill : %d\n", process_role->is_allow_kill);
+            printk("id_value : %lu, ", process_role->id_value);
+            printk("id_type : %s, ", process_role->id_type == ls_process_pid ? "pid" : "inode");
+            printk("is_allow_kill : %s, ", LS_STATE_STRING(process_role->is_allow_kill));
+            printk("is_allow_trace : %s\n", LS_STATE_STRING(process_role->is_allow_trace));
+
 		}
 
-		printk("\t\t<bind user>\n");
+        printk("\t<SUBJECTS>\n");
+        printk("\t\t<bind processes>\n");
+        list_for_each_entry(bind_process, &role->bind_processes, list) {
+            printk("\t\t - ");
+            printk("id_value : %lu, ", bind_process->id_value);
+            printk("id_type : %s\n", bind_process->id_type == ls_process_pid ? "pid" : "inode");
+        }
+
+		printk("\t\t<bind users>\n");
 		list_for_each_entry(bind_user, &role->bind_users, list) {
 			printk("\t\t - ");
-			printk("uid : %d\n", bind_user->uid);
+			printk("uid : %u\n", bind_user->uid);
 		}
 
-		printk("\t\tEND\n");
+		printk("\t<END>\n");
 	}
 }
 
@@ -112,10 +127,13 @@ ls_create_role
     INIT_LIST_HEAD(&role->file_roles);
     INIT_LIST_HEAD(&role->network_roles);
     INIT_LIST_HEAD(&role->process_roles);
+
+    INIT_LIST_HEAD(&role->bind_processes);
     INIT_LIST_HEAD(&role->bind_users);
 
 	INIT_LIST_HEAD(&role->child_roles);
     list_add(&role->list, &ls_roles);
+
 
     return role;
 }
@@ -164,14 +182,14 @@ ls_create_file_role_by_binary
 // --- NETWORK ROLE --- //
 struct ls_network_role *
 ls_create_network_role
-(struct ls_role *role, unsigned char *ip, unsigned short port, unsigned short is_allow) {
+(struct ls_role *role, unsigned char *ip, unsigned short port, unsigned char is_allow_open) {
 	struct ls_network_role *network_role = kmalloc(sizeof(struct ls_network_role), GFP_KERNEL);
 	if(!network_role)
 		return NULL;
 
 	network_role->ip = ip;
 	network_role->port = port;
-	network_role->is_allow = is_allow;
+	network_role->is_allow_open = is_allow_open;
 
 	list_add(&network_role->list, &role->network_roles);
 
@@ -181,19 +199,26 @@ ls_create_network_role
 struct ls_network_role *
 ls_create_network_role_by_binary
 (struct ls_role *role, char *attr_data) {
-	return ls_create_network_role(role, substring(attr_data + 1, 1, 5), binary_to_number(attr_data + 5, 2), binary_to_number(attr_data + 7, 2));
+	return ls_create_network_role(role, substring(attr_data, 1, 5), binary_to_number(attr_data + 5, 2), attr_data[7]);
 }
 
 // --- PROCESS ROLE --- //
 struct ls_process_role *
 ls_create_process_role
-(struct ls_role *role, unsigned int pid, unsigned short is_allow_kill) {
+(struct ls_role *role, unsigned long id_value, unsigned int id_type, unsigned char is_allow_kill, unsigned char is_allow_trace) {
 	struct ls_process_role *process_role = kmalloc(sizeof(struct ls_process_role), GFP_KERNEL);
 	if(!process_role)
 		return NULL;
 
-	process_role->pid = pid;
+    switch(id_type) {
+    case ls_process_pid : process_role->id_type = ls_process_pid; break;
+    case ls_process_inode : process_role->id_type = ls_process_inode; break;
+    default : return NULL;
+    }
+
+    process_role->id_value = id_value;
 	process_role->is_allow_kill = is_allow_kill;
+    process_role->is_allow_trace = is_allow_trace;
 
 	list_add(&process_role->list, &role->process_roles);
 
@@ -203,14 +228,41 @@ ls_create_process_role
 struct ls_process_role *
 ls_create_process_role_by_binary
 (struct ls_role *role, char *attr_data) {
-	return ls_create_process_role(role, binary_to_number(attr_data + 1, 4), binary_to_number(attr_data + 5, 2));
+	return ls_create_process_role(role, binary_to_number(attr_data + 1, 8), !!(attr_data[9] & 0x04), !!(attr_data[9] & 0x02), attr_data[9] & 0x01);
 }
 
-// --- USER --- //
-struct ls_user *
-ls_create_user
+// --- BIND PROCESS --- //
+struct ls_bind_process *
+ls_create_bind_process
+(struct ls_role *role, unsigned long id_value, unsigned int id_type) {
+    struct ls_bind_process *bind_process = kmalloc(sizeof(struct ls_bind_process), GFP_KERNEL);
+    if(!bind_process)
+        return NULL;
+
+    switch(id_type) {
+    case ls_process_pid : bind_process->id_type = ls_process_pid; break;
+    case ls_process_inode : bind_process->id_type = ls_process_inode; break;
+    default : return NULL;
+    }
+
+    bind_process->id_value = id_value;
+
+    list_add(&bind_process->list, &role->bind_processes);
+
+    return bind_process;
+}
+
+struct ls_bind_process *
+ls_create_bind_process_by_binary
+(struct ls_role *role, char *attr_data) {
+    return ls_create_bind_process(role, binary_to_number(attr_data + 1, 8), attr_data[9] & 0x01);
+}
+
+// --- BIND USER --- //
+struct ls_bind_user *
+ls_create_bind_user
 (struct ls_role *role, uid_t uid) {
-	struct ls_user *bind_user = kmalloc(sizeof(struct ls_user), GFP_KERNEL);
+	struct ls_bind_user *bind_user = kmalloc(sizeof(struct ls_bind_user), GFP_KERNEL);
 	if(!bind_user)
 		return NULL;
 
@@ -221,17 +273,17 @@ ls_create_user
 	return bind_user;
 }
 
-struct ls_user *
-ls_create_user_by_binary
+struct ls_bind_user *
+ls_create_bind_user_by_binary
 (struct ls_role *role, char *attr_data) {
-	return ls_create_user(role, binary_to_number(attr_data + 1, 4));
+	return ls_create_bind_user(role, binary_to_number(attr_data + 1, 4));
 }
 
 // --- ETC --- ///
 struct ls_role *
 ls_get_role_by_uid(uid_t uid) {
     struct ls_role *role = NULL;
-    struct ls_user *bind_user = NULL;
+    struct ls_bind_user *bind_user = NULL;
 
     list_for_each_entry(role, &ls_roles, list) {
        list_for_each_entry(bind_user, &role->bind_users, list) {
@@ -270,7 +322,9 @@ ls_create_object_role_by_binary
 	case 0x01 : ls_create_file_role_by_binary(role, attr_data); break;
 	case 0x02 : ls_create_network_role_by_binary(role, attr_data); break;
 	case 0x03 : ls_create_process_role_by_binary(role, attr_data); break;
-	case 0xff : ls_create_user_by_binary(role, attr_data); break;
+
+    case 0xfe : ls_create_bind_process_by_binary(role, attr_data); break;
+	case 0xff : ls_create_bind_user_by_binary(role, attr_data); break;
 	}
 }
 
@@ -280,12 +334,9 @@ ls_find_parent_role
 	struct ls_role *parent_role = NULL;
 
 	list_for_each_entry(parent_role, &ls_roles, list) {
-		printk("in loop, child : %s\tparent : %s\n", child_role->role_name, parent_role->role_name);
 		if(!strcmp(child_role->parent_role_name, parent_role->role_name)) {
 			child_role->parent_role = parent_role;
 			list_add(&child_role->child_list, &parent_role->child_roles);
-
-			printk("strcmp success, child : %s\tparent : %s\n", child_role->role_name, parent_role->role_name);
 			break;
 		}
 	}
@@ -321,9 +372,7 @@ ls_init
 		}
 
 		list_for_each_entry(role, &ls_roles, list) {
-			printk("before func, child : %s\n", role->role_name);
 			ls_find_parent_role(role);
-			printk("after func, child : %s\n", role->role_name);
 		}
 
 		filp_close(filp, NULL);
@@ -346,4 +395,3 @@ void __exit cleanup_module(void)
 {
 	printk(KERN_INFO "bye\n");
 }
-
