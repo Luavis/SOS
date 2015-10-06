@@ -13,7 +13,7 @@
 #include <linux/fs.h>
 #include <asm/uaccess.h>
 
-#define IS_BIT_FLAGGED(DATA, FLAG_BIT) !!(DATA && FLAG_BIT)
+#define IS_BIT_FLAGGED(DATA, FLAG_BIT) ((DATA & FLAG_BIT) == FLAG_BIT)
 
 struct list_head ls_roles;
 struct list_head ls_session_roles;
@@ -45,10 +45,10 @@ binary_to_number
 char *
 substring
 (char *str, int start_pos, int end_pos) {
-
 	char *substr = kmalloc(end_pos - start_pos + 1, GFP_KERNEL);
-	if(unlikey(substr == NULL))
-        return NULL:
+
+	if(unlikely(substr == NULL))
+        return NULL;
 
     memcpy(substr, str + start_pos, end_pos - start_pos);
 	substr[end_pos - start_pos] = '\0';
@@ -173,7 +173,7 @@ ls_create_role_by_binary
 
 	role_name = substring(header_data, offset + 1, offset + header_data[offset] + 1);
 
-    if(unnlikely(role_name == NULL))
+    if(unlikely(role_name == NULL))
         return NULL;
 
 	offset += header_data[offset] + 1;
@@ -267,8 +267,8 @@ ls_create_process_role_by_binary
 	return ls_create_process_role(
         role,
         binary_to_number(attr_data + 1, 8),
-        IS_BIT_FLAGGED(attr_data[9] & 0x04),
-        IS_BIT_FLAGGED(attr_data[9] & 0x02),
+        IS_BIT_FLAGGED(attr_data[9], 0x04),
+        IS_BIT_FLAGGED(attr_data[9], 0x02),
         attr_data[9] & 0x01);
 }
 
@@ -467,21 +467,13 @@ ls_init
 
 	filp = filp_open(role_path, O_RDONLY, S_IRUSR);
 
-    if((int)filp < 0) {
-        printk("SOS open error %d\n", filp);
-    }
-    else {
-        printk("SOS open %d\n", filp);
-    }
-
-
-	if(likely((int)filp < 0)) {
+	if(likely((filp != NULL))) {
         // create default role in list, default role allow all
         ls_create_role("default", NULL, 0);
 
 		while(vfs_read(filp, header_data, LS_HEADER_SIZE, &filp->f_pos)) {
 			role = ls_create_role_by_binary(header_data);
-            if(unlikely(role))
+            if(unlikely(role == NULL))
                 panic("SOS: data.sos is invalid\n");
 
 			for(i = 0; i < role->attr_count; i++) {
@@ -497,7 +489,7 @@ ls_init
 		filp_close(filp, NULL);
 	}
 	else {
-        printk("SOS open error %d\n", (int)filp);
+        printk("SOS: Unknown file pointer:  %p\n", filp);
         panic("SOS: file open error...\n");
     }
 

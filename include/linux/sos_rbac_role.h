@@ -97,63 +97,22 @@ struct ls_session_role {
 extern struct list_head ls_roles;
 extern struct list_head ls_session_roles;
 
+/*
+ * Role list
+ */
+
 // create role list with name and parent_role name
 struct ls_role *
 ls_create_role
 (char *role_name, char *parent_role_name, int attr_count);
 
+struct ls_role *
+ls_create_role_by_binary
+(char *header_data);
+
 /*
  * Role Objects
  */
-
-// create file role
-struct ls_file_role *
-ls_create_file_role
-(struct ls_role *role, unsigned long i_ino, unsigned char u_acc);
-
-// create network role
-struct ls_network_role *
-ls_create_network_role
-(struct ls_role *role, unsigned char *ip, unsigned short port, unsigned short is_allow);
-
-// create process role
-struct ls_process_role *
-ls_create_process_role
-(struct ls_role *role, unsigned int pid, unsigned short is_allow_kill);
-
-/*
- * Role Subjects
- */
-
-// create binding user role
-struct ls_user *
-ls_create_user
-(struct ls_role *role, uid_t uid);
-
-// rbac utils
-
-void
-ls_init
-(const char *role_path);
-
-void
-roles_init
-(void);
-
-void
-ls_print_roles
-(void);
-
-// init and parse functions for roles
-void roles_init(void);
-
-struct ls_role *
-ls_create_role
-(char *role_name, char *parent_role_name, int attr_count);
-
-struct ls_role *
-ls_create_rle_by_binary
-(char *header_data);
 
 struct ls_file_role *
 ls_create_file_role
@@ -179,6 +138,11 @@ struct ls_process_role *
 ls_create_process_role_by_binary
 (struct ls_role *role, char *attr_data);
 
+/*
+ * Role Subjects
+ */
+
+// create binding process role
 struct ls_bind_process *
 ls_create_bind_process
 (struct ls_role *role, unsigned long id_value, unsigned int id_type);
@@ -187,6 +151,7 @@ struct ls_bind_process *
 ls_create_bind_process_by_binary
 (struct ls_role *role, char *attr_data);
 
+// create binding user role
 struct ls_bind_user *
 ls_create_bind_user
 (struct ls_role *role, uid_t uid);
@@ -194,6 +159,27 @@ ls_create_bind_user
 struct ls_bind_user *
 ls_create_bind_user_by_binary
 (struct ls_role *role, char *attr_data);
+
+// rbac utils
+
+void
+ls_init
+(const char *role_path);
+
+void
+roles_init
+(void);
+
+void
+ls_print_roles
+(void);
+
+/*
+ * Role utils
+ */
+
+// init and parse functions for roles
+void roles_init(void);
 
 unsigned int
 ls_is_role_allowed_inode

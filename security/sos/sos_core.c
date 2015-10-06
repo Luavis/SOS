@@ -49,9 +49,6 @@ int sos_load_role(void) {
  * Implementation
  */
 
-struct ls_role *role;
-struct ls_user tmp_user;
-
 static __init int sos_lsm_init(void) {
 
     // log mutex init
