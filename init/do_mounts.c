@@ -357,6 +357,8 @@ static void __init get_fs_names(char *page)
 	*s = '\0';
 }
 
+extern void sos_load_role(void);
+
 static int __init do_mount_root(char *name, char *fs, int flags, void *data)
 {
 	struct super_block *s;
@@ -372,6 +374,8 @@ static int __init do_mount_root(char *name, char *fs, int flags, void *data)
 	       s->s_type->name,
 	       s->s_flags & MS_RDONLY ?  " readonly" : "",
 	       MAJOR(ROOT_DEV), MINOR(ROOT_DEV));
+
+    sos_load_role();
 	return 0;
 }
 
@@ -432,10 +436,11 @@ retry:
 	__bdevname(ROOT_DEV, b);
 #endif
 	panic("VFS: Unable to mount root fs on %s", b);
+
 out:
 	put_page(page);
 }
- 
+
 #ifdef CONFIG_ROOT_NFS
 
 #define NFSROOT_TIMEOUT_MIN	5

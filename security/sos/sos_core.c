@@ -16,7 +16,9 @@
 
 #define SOS_LOG_SIZE 1024
 #define DEBUG_SOS 1
+#define SOS_ROLE_PATH "/root/etc/data.sos"
 
+int sos_load_role(void);
 
 DEFINE_MUTEX(sos_log_lock);
 DECLARE_WAIT_QUEUE_HEAD(sos_wait_log_queue);
@@ -34,6 +36,14 @@ static struct security_operations sos_lsm_ops = {
     .inode_permission = sos_lsm_inode_permission  // check permission that it can access or not
 };
 
+// late_initcall(sos_load_role);
+
+int sos_load_role(void) {
+    printk("SOS: load role\n");
+    ls_init(SOS_ROLE_PATH);
+    ls_print_roles();
+    return 0;
+}
 
 /*
  * Implementation
@@ -54,15 +64,6 @@ static __init int sos_lsm_init(void) {
 
     // init roles list..
     roles_init();
-
-    // create default role in list, default role allow all
-    create_role("default");
-
-    role = create_role("Test");
-    ls_create_file_role(role, 15466509, 0);
-    tmp_user.uid = 1000;
-
-    list_add(&tmp_user.list, &role->bind_users);
 
     sos_log("SOS: init_roles\n");
 
@@ -101,17 +102,16 @@ int sos_lsm_prepare_creds(struct cred *cred, const struct cred *old, gfp_t gfp) 
 
 void sos_log(char *msg, ...) {
     va_list ap;
+
     char *buf = kmalloc(SOS_LOG_SIZE, GFP_KERNEL);
     va_start(ap, msg);
 
     vscnprintf(buf, SOS_LOG_SIZE, msg, ap);
 
     va_end(ap);
-
 #ifdef DEBUG_SOS
     printk(buf);
 #endif
-
     // lock inturruptible
 
     mutex_lock_interruptible(&sos_log_lock);
