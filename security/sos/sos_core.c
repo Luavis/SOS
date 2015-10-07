@@ -36,12 +36,12 @@ static struct security_operations sos_lsm_ops = {
     .inode_permission = sos_lsm_inode_permission  // check permission that it can access or not
 };
 
-// late_initcall(sos_load_role);
-
 int sos_load_role(void) {
     printk("SOS: load role\n");
     ls_init(SOS_ROLE_PATH);
+#ifdef DEBUG_SOS
     ls_print_roles();
+#endif
     return 0;
 }
 
