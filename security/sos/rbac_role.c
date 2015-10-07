@@ -217,12 +217,11 @@ ls_create_file_role_by_binary
 // --- NETWORK ROLE --- //
 struct ls_network_role *
 ls_create_network_role
-(struct ls_role *role, unsigned char *ip, unsigned short port, unsigned char is_allow_open) {
+(struct ls_role *role, unsigned short port, unsigned char is_allow_open) {
 	struct ls_network_role *network_role = kmalloc(sizeof(struct ls_network_role), GFP_KERNEL);
 	if(!network_role)
 		return NULL;
 
-	network_role->ip = ip;
 	network_role->port = port;
 	network_role->is_allow_open = is_allow_open;
 
