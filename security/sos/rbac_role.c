@@ -92,7 +92,6 @@ ls_print_roles
 		printk("\t\t<network roles>\n");
 		list_for_each_entry(network_role, &role->network_roles, list) {
 			printk("\t\t - ");
-			printk("ip : %u.%u.%u.%u, ", network_role->ip[0], network_role->ip[1], network_role->ip[2], network_role->ip[3]);
 			printk("port : %u, ", network_role->port);
 			printk("is_allow_open : %s\n", LS_STATE_STRING(network_role->is_allow_open));
 		}
@@ -218,12 +217,11 @@ ls_create_file_role_by_binary
 // --- NETWORK ROLE --- //
 struct ls_network_role *
 ls_create_network_role
-(struct ls_role *role, unsigned char *ip, unsigned short port, unsigned char is_allow_open) {
+(struct ls_role *role, unsigned short port, unsigned char is_allow_open) {
 	struct ls_network_role *network_role = kmalloc(sizeof(struct ls_network_role), GFP_KERNEL);
 	if(!network_role)
 		return NULL;
 
-	network_role->ip = ip;
 	network_role->port = port;
 	network_role->is_allow_open = is_allow_open;
 
@@ -235,7 +233,7 @@ ls_create_network_role
 struct ls_network_role *
 ls_create_network_role_by_binary
 (struct ls_role *role, char *attr_data) {
-	return ls_create_network_role(role, substring(attr_data, 1, 5), binary_to_number(attr_data + 5, 2), attr_data[7]);
+	return ls_create_network_role(role, binary_to_number(attr_data + 1, 2), attr_data[3]);
 }
 
 // --- PROCESS ROLE --- //
@@ -269,7 +267,7 @@ ls_create_process_role_by_binary
         binary_to_number(attr_data + 1, 8),
         IS_BIT_FLAGGED(attr_data[9], 0x04),
         IS_BIT_FLAGGED(attr_data[9], 0x02),
-        attr_data[9] & 0x01);
+        IS_BIT_FLAGGED(attr_data[9], 0x01));
 }
 
 // --- BIND PROCESS --- //
@@ -296,7 +294,10 @@ ls_create_bind_process
 struct ls_bind_process *
 ls_create_bind_process_by_binary
 (struct ls_role *role, char *attr_data) {
-    return ls_create_bind_process(role, binary_to_number(attr_data + 1, 8), attr_data[9] & 0x01);
+    return ls_create_bind_process(
+        role,
+        binary_to_number(attr_data + 1, 8),
+        IS_BIT_FLAGGED(attr_data[9], 0x01));
 }
 
 // --- BIND USER --- //
