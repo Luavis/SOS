@@ -181,9 +181,21 @@ ls_print_roles
 // init and parse functions for roles
 void roles_init(void);
 
-unsigned int
+int
 ls_is_role_allowed_inode
 (struct ls_role *role, unsigned long i_ino, unsigned char mode);
+
+int
+ls_is_role_allowed_open_port
+(struct ls_role *role, unsigned short port);
+
+int
+ls_is_role_allowed_kill
+(struct ls_role *role, pid_t pid, unsigned long i_ino);
+
+int
+ls_is_role_allowed_trace
+(struct ls_role *role, pid_t pid, unsigned long i_ino);
 
 struct ls_role *
 ls_get_role_by_uid(uid_t uid);

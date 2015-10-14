@@ -393,12 +393,12 @@ ls_get_role() {
     return retval;
 }
 
-unsigned int
+int
 ls_is_role_allowed_inode
 (struct ls_role *role, unsigned long i_ino, unsigned char mode) {
     struct ls_file_role *file_role = NULL;
 
-    if(role == NULL)
+    if(unlikely(role == NULL))
         return default_policy;
 
     list_for_each_entry(file_role, &role->file_roles, list) {
@@ -406,7 +406,88 @@ ls_is_role_allowed_inode
             return (file_role->u_acc & mode) != 0 ? LS_ALLOW : LS_DENY;
     }
 
-    return default_policy;
+    if(role->parent_role != NULL)
+        return ls_is_role_allowed_inode(role->parent_role, i_ino, mode);
+    else
+        return default_policy;
+}
+
+int
+ls_is_role_allowed_open_port
+(struct ls_role *role, unsigned short port) {
+    struct ls_network_role *network_role = NULL;
+
+    if(unlikely(role == NULL))
+        return default_policy;
+
+    list_for_each_entry(network_role, &role->network_roles, list) {
+        printk("port %d\n", network_role->port);
+
+        if(network_role->port == port)
+            return LS_IS_ALLOWED(network_role->is_allow_open) ? LS_ALLOW : LS_DENY;
+    }
+
+    if(role->parent_role != NULL)
+        return ls_is_role_allowed_open_port(role->parent_role, port);
+    else
+        return default_policy;
+}
+
+int
+ls_is_role_allowed_kill
+(struct ls_role *role, pid_t pid, unsigned long i_ino) {
+    struct ls_process_role *process_role = NULL;
+    unsigned int retval = INT_MAX;
+
+    if(unlikely(role == NULL))
+        return default_policy;
+
+    list_for_each_entry(process_role, &role->process_roles, list) {
+        if((process_role->id_type == ls_process_pid)
+               && process_role->id_value == pid)
+            return process_role->is_allow_kill;
+        else if((process_role->id_type == ls_process_inode)
+                && process_role->id_value == i_ino)
+            retval = process_role->is_allow_kill;
+    }
+
+    if(retval != INT_MAX)
+        return LS_IS_ALLOWED(retval) ? LS_ALLOW : LS_DENY;
+
+    if(role->parent_role != NULL)
+        return ls_is_role_allowed_kill(role->parent_role, pid, i_ino);
+    else
+        return default_policy;
+}
+
+int
+ls_is_role_allowed_trace
+(struct ls_role *role, pid_t pid, unsigned long i_ino) {
+    struct ls_process_role *process_role = NULL;
+    unsigned int retval = INT_MAX;
+
+    if(unlikely(role == NULL))
+        return default_policy;
+
+    list_for_each_entry(process_role, &role->process_roles, list) {
+
+        // if same pid exist in role return it now
+        if((process_role->id_type == ls_process_pid)
+                && process_role->id_value == pid)
+            return process_role->is_allow_trace;
+        // if found by inode return it later
+        else if((process_role->id_type == ls_process_inode)
+                && process_role->id_value == i_ino)
+            retval = process_role->is_allow_trace;
+    }
+
+    if(retval != INT_MAX)
+        return LS_IS_ALLOWED(retval) ? LS_ALLOW : LS_DENY;
+
+    if(role->parent_role != NULL)
+        return ls_is_role_allowed_trace(role->parent_role, pid, i_ino);
+    else
+        return default_policy;
 }
 
 // --- INITIAL --- //
@@ -427,6 +508,9 @@ void
 ls_find_parent_role
 (struct ls_role *child_role) {
 	struct ls_role *parent_role = NULL;
+
+    if(child_role == default_role)
+        return; // pass default role
 
     // when child_role doesn't have parent role name set it default
     if(child_role->parent_role_name == NULL) {
@@ -467,7 +551,7 @@ ls_init
 
 	filp = filp_open(role_path, O_RDONLY, S_IRUSR);
 
-	if(likely((filp != NULL))) {
+	if(likely(!IS_ERR(filp))) {
         // create default role in list, default role allow all
         ls_create_role("default", NULL, 0);
 

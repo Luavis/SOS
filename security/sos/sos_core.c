@@ -9,6 +9,9 @@
 #include <linux/mutex.h>
 #include <linux/string.h>
 #include <linux/list.h>
+#include <linux/socket.h>
+#include <linux/mm.h>
+#include <linux/ptrace.h>
 
 /*
  * Declare
@@ -26,14 +29,41 @@ char *sos_log_buf = NULL;
 int sos_log_size;
 unsigned char sos_wait_log_cond = false;
 
-int sos_lsm_prepare_creds(struct cred* cred, const struct cred *old, gfp_t gfp);
-int sos_lsm_inode_permission(struct inode *inode, int mask);
-void sos_log(char *fmt, ...);
+int
+sos_lsm_prepare_creds
+(struct cred* cred, const struct cred *old, gfp_t gfp);
+
+int
+sos_lsm_task_kill
+(struct task_struct *p, struct siginfo *info, int sig, u32 secid);
+
+int
+sos_lsm_task_trace
+(struct task_struct *p, unsigned int mode);
+
+int
+sos_lsm_socket_bind
+(struct socket *sock, struct sockaddr *address, int addrlen);
+
+int
+sos_lsm_inode_permission
+(struct inode *inode, int mask);
+
+void
+sos_log
+(char *fmt, ...);
 
 static struct security_operations sos_lsm_ops = {
     .name = "Sos",
-    .cred_prepare = sos_lsm_prepare_creds, // cred created
-    .inode_permission = sos_lsm_inode_permission  // check permission that it can access or not
+    // cred created
+    .cred_prepare = sos_lsm_prepare_creds,
+    // task get killed
+    .ptrace_access_check = sos_lsm_task_trace,
+    .task_kill = sos_lsm_task_kill,
+    // socket created
+    .socket_bind  = sos_lsm_socket_bind,
+    // check permission that it can access or not
+    .inode_permission = sos_lsm_inode_permission
 };
 
 int sos_load_role(void) {
@@ -42,6 +72,7 @@ int sos_load_role(void) {
 #ifdef DEBUG_SOS
     ls_print_roles();
 #endif
+
     return 0;
 }
 
@@ -78,7 +109,7 @@ sos_lsm_inode_permission
 (struct inode *inode, int mask) {
 
     unsigned long i_ino = inode->i_ino;
-    unsigned int retval = 0;
+    int retval = 0;
 
     struct ls_role *role = ls_get_role();
 
@@ -90,14 +121,95 @@ sos_lsm_inode_permission
     return retval;
 }
 
-int sos_lsm_prepare_creds(struct cred *cred, const struct cred *old, gfp_t gfp) {
+int
+sos_lsm_socket_bind
+(struct socket *sock, struct sockaddr *address, int addrlen) {
+    unsigned char port_1b = address->sa_data[0];
+    unsigned char port_2b = address->sa_data[1];
+    unsigned short port = (port_1b << 8) | port_2b;
+    int retval = 0;
+
+    struct ls_role *role = ls_get_role();
+
+    retval = ls_is_role_allowed_open_port(role, port);
+
+    if(unlikely(retval != 0))
+        printk("incalid acc to port %d\n", port);
+        // sos_log("invalid access to port %d\n", port);
+
+    return retval;
+}
+
+int
+sos_lsm_task_kill
+(struct task_struct *p, struct siginfo *info, int sig, u32 secid) {
+    struct mm_struct *mm;
+	struct file *exe_file;
+    struct ls_role *role = ls_get_role();
+    int retval = default_policy;
+
+	mm = get_task_mm(p);
+	// put_task_struct(p);
+	if (!mm)
+        return retval;
+
+    exe_file = get_mm_exe_file(mm);
+	mmput(mm);
+	if (exe_file) {
+        retval = ls_is_role_allowed_kill(role, p->pid, exe_file->f_inode->i_ino);
+
+	}
+    if(unlikely(retval != 0))
+        sos_log("invalid kill to pid %d\n", p->pid);
+
+    return retval;
+}
+
+int
+sos_lsm_task_trace
+(struct task_struct *p, unsigned int mode) {
+    struct mm_struct *mm;
+	struct file *exe_file;
+    struct ls_role *role;
+
+    int retval = default_policy;
+
+    role = ls_get_role();
+    mm = p->mm; // get_task_mm(p);
+
+    if (!mm)
+        return default_policy;
+    else {
+        if(p->flags & PF_KTHREAD)
+            return default_policy;
+        else
+            atomic_inc(&mm->mm_users);
+    }
+
+    exe_file = get_mm_exe_file(mm);
+	mmput(mm);
+	if (exe_file) {
+        retval = ls_is_role_allowed_trace(role, p->pid, exe_file->f_inode->i_ino);
+	}
+
+    if(unlikely(retval != 0))
+        sos_log("invalid trace to pid %d\n", p->pid);
+
+    return retval;
+}
+
+int
+sos_lsm_prepare_creds
+(struct cred *cred, const struct cred *old, gfp_t gfp) {
 
 //    cred->security = ls_get_role();
 
     return 0;
 }
 
-void sos_log(char *msg, ...) {
+void
+sos_log
+(char *msg, ...) {
     va_list ap;
 
     char *buf = kmalloc(SOS_LOG_SIZE, GFP_KERNEL);
