@@ -12,6 +12,7 @@
 #include <linux/socket.h>
 #include <linux/mm.h>
 #include <linux/ptrace.h>
+#include <linux/spinlock.h>
 
 /*
  * Declare
@@ -19,15 +20,19 @@
 
 #define SOS_LOG_SIZE 1024
 #define DEBUG_SOS 1
-#define SOS_ROLE_PATH "/root/etc/data.sos"
 
-int sos_load_role(void);
-
+DEFINE_RWLOCK(sos_role_lock);
 DEFINE_MUTEX(sos_log_lock);
 DECLARE_WAIT_QUEUE_HEAD(sos_wait_log_queue);
+
 char *sos_log_buf = NULL;
 int sos_log_size;
 unsigned char sos_wait_log_cond = false;
+atomic_t inode_role_flag;
+
+int
+sos_load_role
+(void);
 
 int
 sos_lsm_prepare_creds
@@ -36,6 +41,10 @@ sos_lsm_prepare_creds
 int
 sos_lsm_task_kill
 (struct task_struct *p, struct siginfo *info, int sig, u32 secid);
+
+int
+sos_lsm_task_trace_me
+(struct task_struct *me);
 
 int
 sos_lsm_task_trace
@@ -58,6 +67,7 @@ static struct security_operations sos_lsm_ops = {
     // cred created
     .cred_prepare = sos_lsm_prepare_creds,
     // task get killed
+    .ptrace_traceme = sos_lsm_task_trace_me,
     .ptrace_access_check = sos_lsm_task_trace,
     .task_kill = sos_lsm_task_kill,
     // socket created
@@ -67,12 +77,14 @@ static struct security_operations sos_lsm_ops = {
 };
 
 int sos_load_role(void) {
+    read_lock(&sos_role_lock);
     printk("SOS: load role\n");
-    ls_init(SOS_ROLE_PATH);
+    ls_init(SOS_INIT_ROLE_PATH);
 #ifdef DEBUG_SOS
     ls_print_roles();
 #endif
 
+    read_unlock(&sos_role_lock);
     return 0;
 }
 
@@ -90,8 +102,10 @@ static __init int sos_lsm_init(void) {
 
     sos_log("SOS: reset security ops\n");
 
+    read_lock(&sos_role_lock);
     // init roles list..
     roles_init();
+    read_unlock(&sos_role_lock);
 
     sos_log("SOS: init_roles\n");
 
@@ -110,8 +124,14 @@ sos_lsm_inode_permission
 
     unsigned long i_ino = inode->i_ino;
     int retval = 0;
+    struct ls_role *role;
 
-    struct ls_role *role = ls_get_role();
+    if(atomic_read(&inode_role_flag) == 1) // pass if status is reloading role
+        return 0;
+
+    read_lock(&sos_role_lock);
+    role = ls_get_role();
+    read_unlock(&sos_role_lock);
 
     retval = ls_is_role_allowed_inode(role, i_ino, mask);
 
@@ -129,7 +149,11 @@ sos_lsm_socket_bind
     unsigned short port = (port_1b << 8) | port_2b;
     int retval = 0;
 
-    struct ls_role *role = ls_get_role();
+    struct ls_role *role;
+
+    read_lock(&sos_role_lock);
+    role = ls_get_role();
+    read_unlock(&sos_role_lock);
 
     retval = ls_is_role_allowed_open_port(role, port);
 
@@ -145,8 +169,12 @@ sos_lsm_task_kill
 (struct task_struct *p, struct siginfo *info, int sig, u32 secid) {
     struct mm_struct *mm;
 	struct file *exe_file;
-    struct ls_role *role = ls_get_role();
+    struct ls_role *role;
     int retval = default_policy;
+
+    read_lock(&sos_role_lock);
+    role = ls_get_role();
+    read_unlock(&sos_role_lock);
 
 	mm = get_task_mm(p);
 	// put_task_struct(p);
@@ -160,7 +188,42 @@ sos_lsm_task_kill
 
 	}
     if(unlikely(retval != 0))
-        sos_log("invalid kill to pid %d\n", p->pid);
+        sos_log("invalid kill to pid %d, inode %d\n", p->pid, exe_file->f_inode->i_ino);
+
+    return retval;
+}
+
+int
+sos_lsm_task_trace_me
+(struct task_struct *p) {
+    struct mm_struct *mm;
+	struct file *exe_file;
+    struct ls_role *role;
+
+    int retval = default_policy;
+    p = current;
+
+    read_lock(&sos_role_lock);
+    role = ls_get_role();
+    read_unlock(&sos_role_lock);
+
+    mm = get_task_mm(p);
+
+    if (!mm)
+        return default_policy;
+
+    exe_file = get_mm_exe_file(mm);
+	mmput(mm);
+
+    sos_log("trace me to pid %d inode %d\n", p->pid, exe_file->f_inode->i_ino);
+    if (exe_file) {
+        retval = ls_is_role_allowed_trace(role, p->pid, exe_file->f_inode->i_ino);
+	}
+
+    if(unlikely(retval != 0)) {
+        sos_log("invalid trace me to pid %d, inode %d\n", p->pid, exe_file->f_inode->i_ino);
+        return -EPERM;
+    }
 
     return retval;
 }
@@ -174,7 +237,10 @@ sos_lsm_task_trace
 
     int retval = default_policy;
 
+    read_lock(&sos_role_lock);
     role = ls_get_role();
+    read_unlock(&sos_role_lock);
+
     mm = p->mm; // get_task_mm(p);
 
     if (!mm)
@@ -192,9 +258,10 @@ sos_lsm_task_trace
         retval = ls_is_role_allowed_trace(role, p->pid, exe_file->f_inode->i_ino);
 	}
 
-    if(unlikely(retval != 0))
-        sos_log("invalid trace to pid %d\n", p->pid);
-
+    if(unlikely(retval != 0)) {
+        sos_log("invalid trace to pid %d, inode %d\n", p->pid, exe_file->f_inode->i_ino);
+        return -EPERM;
+    }
     return retval;
 }
 

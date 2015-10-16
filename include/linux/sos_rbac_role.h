@@ -6,9 +6,15 @@
 #include <linux/types.h>
 #include <linux/pid.h>
 
+#define SOS_ROLE_PATH "/etc/data.sos"
+#define SOS_INIT_ROLE_PATH "/root/etc/data.sos"
+
 #define LS_READ_ACCS 1
 #define LS_WRITE_ACCS 2
 #define LS_EXCUTE_ACCS 4
+
+#define CACHE_ROLE 1
+#define NOT_CACHE_ROLE 0
 
 #define LS_ALLOW 0
 #define LS_DENY -EACCES
@@ -29,7 +35,6 @@ struct ls_file_role {
 };
 
 struct ls_network_role {
-    unsigned char *ip;
     unsigned short port;
 
     unsigned char is_allow_open;
@@ -167,6 +172,10 @@ ls_init
 (const char *role_path);
 
 void
+ls_trunc_roles
+(void);
+
+void
 roles_init
 (void);
 
@@ -199,6 +208,10 @@ ls_is_role_allowed_trace
 
 struct ls_role *
 ls_get_role_by_uid(uid_t uid);
+
+int
+ls_get_role_by_puid
+(uid_t uid, struct task_struct *p, struct ls_role **ret_role);
 
 struct ls_role *
 ls_get_role_by_sid(pid_t sid);

@@ -338,6 +338,61 @@ ls_get_role_by_uid(uid_t uid) {
     return default_role;  // if not found return NULL
 }
 
+
+int
+ls_get_role_by_puid
+(uid_t uid, struct task_struct *p, struct ls_role **ret_role) {
+    struct ls_role *role = NULL;
+    struct ls_bind_user *bind_user = NULL;
+    struct ls_bind_process *bind_process = NULL;
+    struct ls_role *inode_role = NULL;
+    struct file *exe_file;
+    struct mm_struct *mm;
+    pid_t pid = p->pid;
+    unsigned long i_ino = 0;
+
+    *ret_role = default_role;
+
+    mm = p->mm; // get_task_mm(p);
+
+    if (!mm)
+        return default_policy;
+    else {
+        if(p->flags & PF_KTHREAD)
+            return default_policy;
+        else
+            atomic_inc(&mm->mm_users);
+    }
+
+    exe_file = get_mm_exe_file(mm);
+    i_ino = exe_file->f_inode->i_ino;
+    mmput(mm);
+
+    list_for_each_entry(role, &ls_roles, list) {
+       list_for_each_entry(bind_user, &role->bind_users, list) {
+            // check user id
+            if(bind_user->uid == uid) {
+                *ret_role = role;
+                return CACHE_ROLE;
+            }
+        }
+
+        list_for_each_entry(bind_process, &role->bind_processes, list) {
+            if((bind_process->id_type == ls_process_pid)
+                    && bind_process->id_value == pid)
+                *ret_role = role;
+            else if((bind_process->id_type == ls_process_inode)
+                    && bind_process->id_value == i_ino)
+                inode_role = role;
+        }
+    }
+
+    if(likely(inode_role != NULL))
+        *ret_role = inode_role;
+
+    return NOT_CACHE_ROLE;  // if not found return NULL
+}
+
 struct ls_role *
 ls_get_role_by_sid(pid_t sid) {
 
@@ -357,10 +412,9 @@ ls_get_role() {
     struct ls_role * retval = NULL;
     pid_t sid;
     uid_t uid;
+    int cache_role = NOT_CACHE_ROLE;
 
     rcu_read_lock(); // rcu read lock for current processor status
-
-    s_role = current->cred->security;
 
     // search session based on cred
     sid = pid_vnr(task_session(current));
@@ -373,9 +427,9 @@ ls_get_role() {
         retval = ls_get_role_by_sid(sid);
 
         if(!retval) {
-            retval = ls_get_role_by_uid(uid);
+            cache_role = ls_get_role_by_puid(uid, current, &retval);
 
-            if(retval && retval != default_role) {
+            if(cache_role && retval) {
                 s_role = kmalloc(sizeof(struct ls_session_role), GFP_KERNEL);
                 s_role->sid = sid;
                 s_role->role = retval;
@@ -581,3 +635,69 @@ ls_init
 	set_fs(old_fs);
 }
 
+
+void
+ls_trunc_roles
+(void) {
+
+    struct ls_role *role;
+    struct ls_role *n_role;
+
+    struct ls_file_role *file_role;
+    struct ls_file_role *n_file_role;
+
+    struct ls_network_role *network_role;
+    struct ls_network_role *n_network_role;
+
+    struct ls_process_role *process_role;
+    struct ls_process_role *n_process_role;
+
+    struct ls_bind_process *bind_process;
+    struct ls_bind_process *n_bind_process;
+
+    struct ls_bind_user *bind_user;
+    struct ls_bind_user *n_bind_user;
+    struct ls_session_role *session_role;
+    struct ls_session_role *n_session_role;
+
+    list_for_each_entry_safe(role, n_role, &ls_roles, list) {
+        list_for_each_entry_safe(file_role, n_file_role, &role->file_roles, list) {
+            list_del(&file_role->list);
+            kfree(file_role);
+            file_role = NULL;
+        }
+
+        list_for_each_entry_safe(network_role, n_network_role, &role->network_roles, list) {
+            list_del(&network_role->list);
+            kfree(network_role);
+            network_role = NULL;
+        }
+
+        list_for_each_entry_safe(process_role, n_process_role, &role->process_roles, list) {
+            list_del(&process_role->list);
+            kfree(process_role);
+            process_role = NULL;
+        }
+
+        list_for_each_entry_safe(bind_process, n_bind_process, &role->bind_processes, list) {
+            list_del(&bind_process->list);
+            kfree(bind_process);
+            bind_process = NULL;
+        }
+
+        list_for_each_entry_safe(bind_user, n_bind_user, &role->bind_users, list) {
+            list_del(&bind_user->list);
+            kfree(bind_user);
+            bind_user = NULL;
+        }
+
+        // kfree(role->role_name);
+        list_del(&role->list);
+        kfree(role);
+    }
+
+    list_for_each_entry_safe(session_role, n_session_role, &ls_session_roles, list) {
+        list_del(&session_role->list);
+        kfree(session_role);
+    }
+}
