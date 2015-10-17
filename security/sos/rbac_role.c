@@ -19,6 +19,7 @@ struct list_head ls_roles;
 struct list_head ls_session_roles;
 
 struct ls_role *default_role;
+extern struct ls_role *empty_role;
 
 unsigned int default_policy = LS_ALLOW;
 
@@ -156,6 +157,8 @@ ls_create_role
 
     if(unlikely(strcmp(role_name, "default") == 0))
         default_role = role; // if role is default set it!
+    else if(unlikely(strcmp(role_name, "empty") == 0))
+        empty_role = role;
     else
         ls_find_parent_role(role); // if not find parent
 
@@ -433,6 +436,7 @@ ls_get_role() {
                 s_role = kmalloc(sizeof(struct ls_session_role), GFP_KERNEL);
                 s_role->sid = sid;
                 s_role->role = retval;
+                s_role->is_role_manager = 0;
 
                 list_add(&s_role->list, &ls_session_roles);
             }
@@ -564,8 +568,8 @@ ls_find_parent_role
 (struct ls_role *child_role) {
 	struct ls_role *parent_role = NULL;
 
-    if(child_role == default_role)
-        return; // pass default role
+    if(child_role == default_role || child_role == empty_role)
+        return; // pass default or empty role
 
     // when child_role doesn't have parent role name set it default
     if(child_role->parent_role_name == NULL) {

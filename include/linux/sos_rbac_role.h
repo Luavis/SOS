@@ -95,8 +95,8 @@ struct ls_session_role {
 
     pid_t sid;
     struct ls_role *role;
-
     struct list_head list;
+    unsigned char is_role_manager;
 };
 
 extern struct list_head ls_roles;

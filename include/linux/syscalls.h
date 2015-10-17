@@ -885,5 +885,6 @@ asmlinkage long sys_execveat(int dfd, const char __user *filename,
 
 asmlinkage long sys_get_sos_log(char *buf, unsigned long buf_size);
 asmlinkage long sys_reload_role(void);
+asmlinkage long sys_login_role_manager(void);
 
 #endif

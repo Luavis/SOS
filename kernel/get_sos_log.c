@@ -20,6 +20,8 @@ extern int sos_log_size;
 extern unsigned char sos_wait_log_cond;
 extern rwlock_t sos_role_lock;
 extern atomic_t inode_role_flag;
+extern struct ls_role *empty_role;
+
 
 asmlinkage long
 sys_get_sos_log
@@ -49,7 +51,21 @@ sys_get_sos_log
 asmlinkage long
 sys_reload_role
 (void) {
+    struct ls_session_role *session_role = NULL;
+    pid_t sid;
 
+    rcu_read_lock();
+    sid = pid_vnr(task_session(current));
+
+    printk("session id: %d\n", sid);
+    list_for_each_entry(session_role, &ls_session_roles, list) {
+        if(session_role->sid == sid && session_role->is_role_manager)
+            goto reload;
+    }
+
+    return -EPERM; // if not found
+
+reload:
     write_lock(&sos_role_lock);
 
     ls_trunc_roles();
@@ -61,6 +77,34 @@ sys_reload_role
     write_unlock(&sos_role_lock);
 
     // TODO: check permission and return -EACCES
+    return 0;
+}
+asmlinkage long
+sys_login_role_manager
+(void) {
+    struct ls_session_role *session_role = NULL;
+    pid_t sid;
+
+    rcu_read_lock();
+    sid = pid_vnr(task_session(current));
+
+    rcu_read_unlock();
+
+    list_for_each_entry(session_role, &ls_session_roles, list) {
+        if(session_role->sid == sid)
+            goto out;
+    }
+
+    //if session doesn't allocate any role
+
+    session_role = kmalloc(sizeof(struct ls_session_role), GFP_KERNEL);
+    session_role->sid = sid;
+    list_add(&session_role->list, &ls_session_roles);
+
+out:
+    // role manager can access anywhere
+    session_role->role = empty_role;
+    session_role->is_role_manager = 1;
     return 0;
 }
 

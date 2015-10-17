@@ -29,6 +29,7 @@ char *sos_log_buf = NULL;
 int sos_log_size;
 unsigned char sos_wait_log_cond = false;
 atomic_t inode_role_flag;
+struct ls_role *empty_role;
 
 int
 sos_load_role
@@ -108,6 +109,8 @@ static __init int sos_lsm_init(void) {
     read_unlock(&sos_role_lock);
 
     sos_log("SOS: init_roles\n");
+
+    ls_create_role("empty", NULL, 0);
 
     if(register_security(&sos_lsm_ops))
         // make panic when failed to register security module.
