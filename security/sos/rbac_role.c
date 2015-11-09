@@ -705,4 +705,6 @@ ls_trunc_roles
         list_del(&session_role->list);
         kfree(session_role);
     }
+
+    ls_create_role("empty", NULL, 0);
 }
