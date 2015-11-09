@@ -632,8 +632,9 @@ ls_init
 		filp_close(filp, NULL);
 	}
 	else {
+        ls_create_role("default", NULL, 0);
         printk("SOS: Unknown file pointer:  %p\n", filp);
-        panic("SOS: file open error...\n");
+        printk("SOS: file open error...\n");
     }
 
 	set_fs(old_fs);
