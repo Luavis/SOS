@@ -13,6 +13,7 @@
 #include <linux/mm.h>
 #include <linux/ptrace.h>
 #include <linux/spinlock.h>
+#include <linux/binfmts.h>
 
 /*
  * Declare
@@ -44,10 +45,6 @@ sos_lsm_task_kill
 (struct task_struct *p, struct siginfo *info, int sig, u32 secid);
 
 int
-sos_lsm_task_trace_me
-(struct task_struct *me);
-
-int
 sos_lsm_task_trace
 (struct task_struct *p, unsigned int mode);
 
@@ -59,6 +56,10 @@ int
 sos_lsm_inode_permission
 (struct inode *inode, int mask);
 
+int
+sos_lsm_bprm_check
+(struct linux_binprm *bprm);
+
 void
 sos_log
 (char *fmt, ...);
@@ -68,7 +69,7 @@ static struct security_operations sos_lsm_ops = {
     // cred created
     .cred_prepare = sos_lsm_prepare_creds,
     // task get killed
-    .ptrace_traceme = sos_lsm_task_trace_me,
+    .bprm_check_security = sos_lsm_bprm_check,
     .ptrace_access_check = sos_lsm_task_trace,
     .task_kill = sos_lsm_task_kill,
     // socket created
@@ -190,44 +191,41 @@ sos_lsm_task_kill
         retval = ls_is_role_allowed_kill(role, p->pid, exe_file->f_inode->i_ino);
 
 	}
-    if(unlikely(retval != 0))
+    if(unlikely(retval != 0)) {
         sos_log("invalid kill to pid %d, inode %d\n", p->pid, exe_file->f_inode->i_ino);
+        return -EPERM;
+    }
 
     return retval;
 }
 
 int
-sos_lsm_task_trace_me
-(struct task_struct *p) {
-    struct mm_struct *mm;
-	struct file *exe_file;
+sos_lsm_bprm_check
+(struct linux_binprm *bprm) {
+    int retval = default_policy;
+    struct file *exe_file;
     struct ls_role *role;
 
-    int retval = default_policy;
-    p = current;
+    if(current->ptrace & PT_PTRACED) {
+        role = ls_get_role();
+        exe_file = bprm->file;
 
-    read_lock(&sos_role_lock);
-    role = ls_get_role();
-    read_unlock(&sos_role_lock);
-
-    mm = get_task_mm(p);
-
-    if (!mm)
-        return default_policy;
-
-    exe_file = get_mm_exe_file(mm);
-	mmput(mm);
-
-    sos_log("trace me to pid %d inode %d\n", p->pid, exe_file->f_inode->i_ino);
-    if (exe_file) {
-        retval = ls_is_role_allowed_trace(role, p->pid, exe_file->f_inode->i_ino);
-	}
+        if(exe_file) {
+            retval = ls_is_role_allowed_trace(
+                role, current->pid,
+                exe_file->f_inode->i_ino
+            );
+        }
+    }
+    else
+        goto out;
 
     if(unlikely(retval != 0)) {
-        sos_log("invalid trace me to pid %d, inode %d\n", p->pid, exe_file->f_inode->i_ino);
+        sos_log("invalid trace me to pid %d, inode %d\n", current->pid, exe_file->f_inode->i_ino);
         return -EPERM;
     }
 
+out:
     return retval;
 }
 
@@ -262,7 +260,7 @@ sos_lsm_task_trace
 	}
 
     if(unlikely(retval != 0)) {
-        sos_log("invalid trace to pid %d, inode %d\n", p->pid, exe_file->f_inode->i_ino);
+        // sos_log("invalid trace to pid %d, inode %d\n", p->pid, exe_file->f_inode->i_ino);
         return -EPERM;
     }
     return retval;

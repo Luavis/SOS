@@ -480,7 +480,6 @@ ls_is_role_allowed_open_port
         return default_policy;
 
     list_for_each_entry(network_role, &role->network_roles, list) {
-        printk("port %d\n", network_role->port);
 
         if(network_role->port == port)
             return LS_IS_ALLOWED(network_role->is_allow_open) ? LS_ALLOW : LS_DENY;
@@ -537,6 +536,7 @@ ls_is_role_allowed_trace
         // if found by inode return it later
         else if((process_role->id_type == ls_process_inode)
                 && process_role->id_value == i_ino)
+                printk("set inode %d\n", process_role->is_allow_trace);
             retval = process_role->is_allow_trace;
     }
 
