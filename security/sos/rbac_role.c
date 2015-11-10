@@ -612,7 +612,6 @@ ls_init
 
 	if(likely(!IS_ERR(filp))) {
         // create default role in list, default role allow all
-        ls_create_role("default", NULL, 0);
 
 		while(vfs_read(filp, header_data, LS_HEADER_SIZE, &filp->f_pos)) {
 			role = ls_create_role_by_binary(header_data);
