@@ -21,7 +21,7 @@ extern unsigned char sos_wait_log_cond;
 extern rwlock_t sos_role_lock;
 extern atomic_t inode_role_flag;
 extern struct ls_role *empty_role;
-
+extern char hash_passwd[21];
 
 asmlinkage long
 sys_get_sos_log
@@ -79,12 +79,27 @@ reload:
     // TODO: check permission and return -EACCES
     return 0;
 }
+
+
 asmlinkage long
 sys_login_role_manager
-(void) {
+(char *passwd) {
     struct ls_session_role *session_role = NULL;
     pid_t sid;
 
+    if(passwd == NULL)
+        return -EPERM;
+
+    if(hash_passwd[0] == 0 &&
+        hash_passwd[1] == 0 &&
+        hash_passwd[2] == 0 &&
+        hash_passwd[3] == 0)
+            goto out2;
+
+    if(strcmp(passwd, hash_passwd) != 0)
+        return -EPERM;
+
+out2:
     rcu_read_lock();
     sid = pid_vnr(task_session(current));
 
@@ -105,6 +120,29 @@ out:
     // role manager can access anywhere
     session_role->role = empty_role;
     session_role->is_role_manager = 1;
+    return 0;
+}
+
+
+asmlinkage long
+sys_logout_role_manager
+(void) {
+    struct ls_session_role *session_role = NULL;
+    pid_t sid;
+
+    rcu_read_lock();
+
+    sid = pid_vnr(task_session(current));
+
+    rcu_read_unlock();
+
+    list_for_each_entry(session_role, &ls_session_roles, list) {
+        if(session_role->sid == sid) {
+            session_role->is_role_manager = 0;
+            break;
+        }
+    }
+
     return 0;
 }
 

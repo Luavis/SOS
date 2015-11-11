@@ -332,6 +332,7 @@
 400 common get_sos_log  sys_get_sos_log
 401 common reload_role sys_reload_role
 402 common login_role_manager sys_login_role_manager
+403 common logout_role_manager sys_logout_role_manager
 
 #
 # x32-specific system call numbers start at 512 to avoid cache impact

@@ -357,7 +357,7 @@ static void __init get_fs_names(char *page)
 	*s = '\0';
 }
 
-extern void sos_load_role(void);
+extern int sos_load_role(void);
 
 static int __init do_mount_root(char *name, char *fs, int flags, void *data)
 {

@@ -60,6 +60,14 @@ int
 sos_lsm_bprm_check
 (struct linux_binprm *bprm);
 
+int
+sos_task_fix_setuid
+(struct cred *new, const struct cred *old, int flags);
+
+int
+sos_inode_unlink
+(struct inode *dir, struct dentry *dentry);
+
 void
 sos_log
 (char *fmt, ...);
@@ -75,7 +83,9 @@ static struct security_operations sos_lsm_ops = {
     // socket created
     .socket_bind  = sos_lsm_socket_bind,
     // check permission that it can access or not
-    .inode_permission = sos_lsm_inode_permission
+    .inode_permission = sos_lsm_inode_permission,
+    .inode_unlink = sos_inode_unlink,
+    .task_fix_setuid = sos_task_fix_setuid
 };
 
 int sos_load_role(void) {
@@ -205,6 +215,11 @@ sos_lsm_bprm_check
     int retval = default_policy;
     struct file *exe_file;
     struct ls_role *role;
+    uid_t uid = current->cred->uid.val;
+
+    if(unlikely((int)current->cred->security == 0xFF)) {
+        printk("SOS: User uid is %d in sec %d\n", uid, current->cred->security);
+    }
 
     if(current->ptrace & PT_PTRACED) {
         role = ls_get_role();
@@ -270,9 +285,47 @@ int
 sos_lsm_prepare_creds
 (struct cred *cred, const struct cred *old, gfp_t gfp) {
 
-//    cred->security = ls_get_role();
+    return 0;
+}
+
+int
+sos_task_fix_setuid
+(struct cred *new, const struct cred *old, int flags) {
+
+    if(flags & LSM_SETID_ID) {
+        printk(KERN_DEBUG "SOS: call setuid\n");
+        new->security = (void *)0xFF;
+    }
 
     return 0;
+}
+
+int
+sos_inode_unlink
+(struct inode *dir, struct dentry *dentry) {
+
+    unsigned long i_ino;
+    int retval = 0;
+
+    struct ls_role *role;
+
+    if(unlikely(dentry->d_inode == NULL))
+        return 0;
+    i_ino = dentry->d_inode->i_ino;
+
+    if(atomic_read(&inode_role_flag) == 1) // pass if status is reloading role
+        return 0;
+
+    read_lock(&sos_role_lock);
+    role = ls_get_role();
+    read_unlock(&sos_role_lock);
+
+    retval = ls_is_role_allowed_inode(role, i_ino, 2); // check write permission
+
+    if(unlikely(retval != 0))
+        sos_log("invalid access to %d\n", i_ino);
+
+    return retval;
 }
 
 void

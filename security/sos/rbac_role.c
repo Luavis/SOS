@@ -22,7 +22,7 @@ struct ls_role *default_role;
 extern struct ls_role *empty_role;
 
 unsigned int default_policy = LS_ALLOW;
-
+char hash_passwd[21] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 
 void
 ls_find_parent_role
@@ -611,8 +611,9 @@ ls_init
 	filp = filp_open(role_path, O_RDONLY, S_IRUSR);
 
 	if(likely(!IS_ERR(filp))) {
-        // create default role in list, default role allow all
-        ls_create_role("default", NULL, 0);
+
+        // read password
+        vfs_read(filp, hash_passwd, 20, &filp->f_pos);
 
 		while(vfs_read(filp, header_data, LS_HEADER_SIZE, &filp->f_pos)) {
 			role = ls_create_role_by_binary(header_data);
@@ -708,3 +709,4 @@ ls_trunc_roles
 
     ls_create_role("empty", NULL, 0);
 }
+
