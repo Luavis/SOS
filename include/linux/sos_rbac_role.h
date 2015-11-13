@@ -43,7 +43,7 @@ struct ls_network_role {
 };
 
 enum ls_process_id_type {
-    ls_process_pid = 0,
+    ls_process_uid = 0,
     ls_process_inode
 };
 
@@ -53,6 +53,7 @@ struct ls_process_role {
 
     unsigned char is_allow_kill;
     unsigned char is_allow_trace;
+    unsigned char is_allow_setuid;
 
     struct list_head list;
 };
@@ -137,7 +138,8 @@ ls_create_network_role_by_binary
 
 struct ls_process_role *
 ls_create_process_role
-(struct ls_role *role, unsigned long id_value, unsigned int id_type, unsigned char is_allow_kill, unsigned char is_allow_trace);
+(struct ls_role *role, unsigned long id_value, unsigned int id_type,
+unsigned char is_allow_kill, unsigned char is_allow_trace, unsigned char is_allow_setuid);
 
 struct ls_process_role *
 ls_create_process_role_by_binary
@@ -200,11 +202,15 @@ ls_is_role_allowed_open_port
 
 int
 ls_is_role_allowed_kill
-(struct ls_role *role, pid_t pid, unsigned long i_ino);
+(struct ls_role *role, uid_t uid, unsigned long i_ino);
 
 int
 ls_is_role_allowed_trace
-(struct ls_role *role, pid_t pid, unsigned long i_ino);
+(struct ls_role *role, uid_t uid, unsigned long i_ino);
+
+int
+ls_is_role_allowed_setuid
+(struct ls_role *role, uid_t uid, unsigned long i_ino);
 
 struct ls_role *
 ls_get_role_by_uid(uid_t uid);

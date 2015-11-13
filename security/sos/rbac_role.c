@@ -1,3 +1,4 @@
+
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/slab.h>
@@ -101,7 +102,7 @@ ls_print_roles
 		list_for_each_entry(process_role, &role->process_roles, list) {
 			printk("\t\t - ");
             printk("id_value : %lu, ", process_role->id_value);
-            printk("id_type : %s, ", process_role->id_type == ls_process_pid ? "pid" : "inode");
+            printk("id_type : %s, ", process_role->id_type == ls_process_uid ? "pid" : "inode");
             printk("is_allow_kill : %s, ", LS_STATE_STRING(process_role->is_allow_kill));
             printk("is_allow_trace : %s\n", LS_STATE_STRING(process_role->is_allow_trace));
 
@@ -112,7 +113,7 @@ ls_print_roles
         list_for_each_entry(bind_process, &role->bind_processes, list) {
             printk("\t\t - ");
             printk("id_value : %lu, ", bind_process->id_value);
-            printk("id_type : %s\n", bind_process->id_type == ls_process_pid ? "pid" : "inode");
+            printk("id_type : %s\n", bind_process->id_type == ls_process_uid ? "pid" : "inode");
         }
 
 		printk("\t\t<bind users>\n");
@@ -242,13 +243,14 @@ ls_create_network_role_by_binary
 // --- PROCESS ROLE --- //
 struct ls_process_role *
 ls_create_process_role
-(struct ls_role *role, unsigned long id_value, unsigned int id_type, unsigned char is_allow_kill, unsigned char is_allow_trace) {
+(struct ls_role *role, unsigned long id_value, unsigned int id_type,
+unsigned char is_allow_kill, unsigned char is_allow_trace, unsigned char is_allow_setuid) {
 	struct ls_process_role *process_role = kmalloc(sizeof(struct ls_process_role), GFP_KERNEL);
 	if(!process_role)
 		return NULL;
 
     switch(id_type) {
-    case ls_process_pid : process_role->id_type = ls_process_pid; break;
+    case ls_process_uid : process_role->id_type = ls_process_uid; break;
     case ls_process_inode : process_role->id_type = ls_process_inode; break;
     default : return NULL;
     }
@@ -256,7 +258,7 @@ ls_create_process_role
     process_role->id_value = id_value;
 	process_role->is_allow_kill = is_allow_kill;
     process_role->is_allow_trace = is_allow_trace;
-
+    process_role->is_allow_setuid = is_allow_setuid;
 	list_add(&process_role->list, &role->process_roles);
 
 	return process_role;
@@ -268,6 +270,7 @@ ls_create_process_role_by_binary
 	return ls_create_process_role(
         role,
         binary_to_number(attr_data + 1, 8),
+        IS_BIT_FLAGGED(attr_data[9], 0x08),
         IS_BIT_FLAGGED(attr_data[9], 0x04),
         IS_BIT_FLAGGED(attr_data[9], 0x02),
         IS_BIT_FLAGGED(attr_data[9], 0x01));
@@ -282,7 +285,7 @@ ls_create_bind_process
         return NULL;
 
     switch(id_type) {
-    case ls_process_pid : bind_process->id_type = ls_process_pid; break;
+    case ls_process_uid : bind_process->id_type = ls_process_uid; break;
     case ls_process_inode : bind_process->id_type = ls_process_inode; break;
     default : return NULL;
     }
@@ -381,7 +384,7 @@ ls_get_role_by_puid
         }
 
         list_for_each_entry(bind_process, &role->bind_processes, list) {
-            if((bind_process->id_type == ls_process_pid)
+            if((bind_process->id_type == ls_process_uid)
                     && bind_process->id_value == pid)
                 *ret_role = role;
             else if((bind_process->id_type == ls_process_inode)
@@ -493,7 +496,7 @@ ls_is_role_allowed_open_port
 
 int
 ls_is_role_allowed_kill
-(struct ls_role *role, pid_t pid, unsigned long i_ino) {
+(struct ls_role *role, uid_t uid, unsigned long i_ino) {
     struct ls_process_role *process_role = NULL;
     unsigned int retval = INT_MAX;
 
@@ -501,8 +504,8 @@ ls_is_role_allowed_kill
         return default_policy;
 
     list_for_each_entry(process_role, &role->process_roles, list) {
-        if((process_role->id_type == ls_process_pid)
-               && process_role->id_value == pid)
+        if((process_role->id_type == ls_process_uid)
+               && process_role->id_value == uid)
             return process_role->is_allow_kill;
         else if((process_role->id_type == ls_process_inode)
                 && process_role->id_value == i_ino)
@@ -513,14 +516,14 @@ ls_is_role_allowed_kill
         return LS_IS_ALLOWED(retval) ? LS_ALLOW : LS_DENY;
 
     if(role->parent_role != NULL)
-        return ls_is_role_allowed_kill(role->parent_role, pid, i_ino);
+        return ls_is_role_allowed_kill(role->parent_role, uid, i_ino);
     else
         return default_policy;
 }
 
 int
 ls_is_role_allowed_trace
-(struct ls_role *role, pid_t pid, unsigned long i_ino) {
+(struct ls_role *role, uid_t uid, unsigned long i_ino) {
     struct ls_process_role *process_role = NULL;
     unsigned int retval = INT_MAX;
 
@@ -529,14 +532,13 @@ ls_is_role_allowed_trace
 
     list_for_each_entry(process_role, &role->process_roles, list) {
 
-        // if same pid exist in role return it now
-        if((process_role->id_type == ls_process_pid)
-                && process_role->id_value == pid)
+        // if same uid exist in role return it now
+        if((process_role->id_type == ls_process_uid)
+                && process_role->id_value == uid)
             return process_role->is_allow_trace;
         // if found by inode return it later
         else if((process_role->id_type == ls_process_inode)
                 && process_role->id_value == i_ino)
-                printk("set inode %d\n", process_role->is_allow_trace);
             retval = process_role->is_allow_trace;
     }
 
@@ -544,7 +546,37 @@ ls_is_role_allowed_trace
         return LS_IS_ALLOWED(retval) ? LS_ALLOW : LS_DENY;
 
     if(role->parent_role != NULL)
-        return ls_is_role_allowed_trace(role->parent_role, pid, i_ino);
+        return ls_is_role_allowed_trace(role->parent_role, uid, i_ino);
+    else
+        return default_policy;
+}
+
+int
+ls_is_role_allowed_setuid
+(struct ls_role *role, uid_t uid, unsigned long i_ino) {
+    struct ls_process_role *process_role = NULL;
+    unsigned int retval = INT_MAX;
+
+    if(unlikely(role == NULL))
+        return default_policy;
+
+    list_for_each_entry(process_role, &role->process_roles, list) {
+
+        // if same uid exist in role return it now
+        if((process_role->id_type == ls_process_uid)
+                && process_role->id_value == uid)
+            return process_role->is_allow_setuid;
+        // if found by inode return it later
+        else if((process_role->id_type == ls_process_inode)
+                && process_role->id_value == i_ino)
+            retval = process_role->is_allow_setuid;
+    }
+
+    if(retval != INT_MAX)
+        return LS_IS_ALLOWED(retval) ? LS_ALLOW : LS_DENY;
+
+    if(role->parent_role != NULL)
+        return ls_is_role_allowed_setuid(role->parent_role, uid, i_ino);
     else
         return default_policy;
 }

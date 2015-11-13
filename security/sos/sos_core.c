@@ -198,11 +198,11 @@ sos_lsm_task_kill
     exe_file = get_mm_exe_file(mm);
 	mmput(mm);
 	if (exe_file) {
-        retval = ls_is_role_allowed_kill(role, p->pid, exe_file->f_inode->i_ino);
+        retval = ls_is_role_allowed_kill(role, p->cred->uid.val, exe_file->f_inode->i_ino);
 
 	}
     if(unlikely(retval != 0)) {
-        sos_log("invalid kill to pid %d, inode %d\n", p->pid, exe_file->f_inode->i_ino);
+        sos_log("invalid kill to uid %d, inode %d\n", p->cred->uid.val, exe_file->f_inode->i_ino);
         return -EPERM;
     }
 
@@ -218,7 +218,15 @@ sos_lsm_bprm_check
     uid_t uid = current->cred->uid.val;
 
     if(unlikely((int)current->cred->security == 0xFF)) {
-        printk("SOS: User uid is %d in sec %d\n", uid, current->cred->security);
+        role = ls_get_role();
+        exe_file = bprm->file;
+
+        if(exe_file) {
+            retval = ls_is_role_allowed_setuid(
+                role, uid,
+                exe_file->f_inode->i_ino
+            );
+        }
     }
 
     if(current->ptrace & PT_PTRACED) {
@@ -227,7 +235,7 @@ sos_lsm_bprm_check
 
         if(exe_file) {
             retval = ls_is_role_allowed_trace(
-                role, current->pid,
+                role, uid,
                 exe_file->f_inode->i_ino
             );
         }
@@ -236,7 +244,7 @@ sos_lsm_bprm_check
         goto out;
 
     if(unlikely(retval != 0)) {
-        sos_log("invalid trace me to pid %d, inode %d\n", current->pid, exe_file->f_inode->i_ino);
+        sos_log("invalid trace me to uid %d, inode %d\n", uid, exe_file->f_inode->i_ino);
         return -EPERM;
     }
 
@@ -271,11 +279,11 @@ sos_lsm_task_trace
     exe_file = get_mm_exe_file(mm);
 	mmput(mm);
 	if (exe_file) {
-        retval = ls_is_role_allowed_trace(role, p->pid, exe_file->f_inode->i_ino);
+        retval = ls_is_role_allowed_trace(role, p->cred->uid.val, exe_file->f_inode->i_ino);
 	}
 
     if(unlikely(retval != 0)) {
-        // sos_log("invalid trace to pid %d, inode %d\n", p->pid, exe_file->f_inode->i_ino);
+        sos_log("invalid trace to uid %d, inode %d\n", p->cred->uid.val, exe_file->f_inode->i_ino);
         return -EPERM;
     }
     return retval;
