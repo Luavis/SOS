@@ -643,7 +643,6 @@ ls_init
 	filp = filp_open(role_path, O_RDONLY, S_IRUSR);
 
 	if(likely(!IS_ERR(filp))) {
-
         // read password
         vfs_read(filp, hash_passwd, 20, &filp->f_pos);
 
