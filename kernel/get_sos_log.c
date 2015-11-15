@@ -74,14 +74,12 @@ reload:
     write_lock(&sos_role_lock);
 
     ls_trunc_roles();
-    ls_print_roles();
     atomic_set(&inode_role_flag, 1);
     ls_init(SOS_ROLE_PATH);
 
     atomic_set(&inode_role_flag, 0);
     write_unlock(&sos_role_lock);
 
-    // TODO: check permission and return -EACCES
     return 0;
 }
 

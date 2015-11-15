@@ -657,10 +657,6 @@ ls_init
 			}
 		}
 
-		list_for_each_entry(role, &ls_roles, list) {
-			ls_find_parent_role(role);
-		}
-
 		filp_close(filp, NULL);
 	}
 	else {
