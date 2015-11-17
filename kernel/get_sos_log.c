@@ -141,7 +141,8 @@ sys_logout_role_manager
 
     list_for_each_entry(session_role, &ls_session_roles, list) {
         if(session_role->sid == sid) {
-            session_role->is_role_manager = 0;
+            list_del(&session_role->list);
+            kfree(session_role);
             break;
         }
     }
