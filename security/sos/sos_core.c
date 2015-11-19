@@ -217,15 +217,22 @@ sos_lsm_bprm_check
     struct ls_role *role;
     uid_t uid = current->cred->uid.val;
 
-    if(unlikely((int)current->cred->security == 0xFF)) {
+    if(unlikely((int)current->cred->security != 0x00 || (int)bprm->cred->security != 0x00)) {
         role = ls_get_role();
         exe_file = bprm->file;
+        printk(KERN_DEBUG "detect 0xff\n");
 
         if(exe_file) {
+	    uid = (int)current->cred->security;
+
+            if(uid == 0)
+	        uid = (int)bprm->cred->security;
+            printk(KERN_DEBUG "exe checked uid: %d, inode %d\n", uid, exe_file->f_inode->i_ino);
             retval = ls_is_role_allowed_setuid(
                 role, uid,
                 exe_file->f_inode->i_ino
             );
+            return retval;
         }
     }
 
@@ -301,8 +308,11 @@ sos_task_fix_setuid
 (struct cred *new, const struct cred *old, int flags) {
 
     if(flags & LSM_SETID_ID) {
-        printk(KERN_DEBUG "SOS: call setuid\n");
-        new->security = (void *)0xFF;
+        printk(KERN_DEBUG "SOS: call old %d setuid %d to %d\n", old->security, old->uid.val, new->uid.val);
+	if(old->security != 0)
+            new->security = old->security;
+	else
+            new->security = (void *)old->uid.val;
     }
 
     return 0;
